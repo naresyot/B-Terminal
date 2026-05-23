@@ -1,9 +1,9 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Terminal as XtermTerminal } from 'xterm';
+import { Terminal as XtermTerminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import { WebglAddon } from '@xterm/addon-webgl';
 import { X, Play, RefreshCw, FolderClosed, AlertCircle } from 'lucide-react';
-import 'xterm/css/xterm.css';
+import '@xterm/xterm/css/xterm.css';
 
 export interface TerminalTabItem {
   id: string;
@@ -20,6 +20,7 @@ interface TerminalTabsProps {
   onSelectTab: (id: string) => void;
   onCloseTab: (id: string) => void;
   onCloneSFTP: (tab: TerminalTabItem) => void;
+  onConnectionError: (tabId: string, error: string) => void;
 }
 
 export const TerminalTabs: React.FC<TerminalTabsProps> = ({
@@ -28,20 +29,39 @@ export const TerminalTabs: React.FC<TerminalTabsProps> = ({
   onSelectTab,
   onCloseTab,
   onCloneSFTP,
+  onConnectionError,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const terminalRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const xtermInstances = useRef<Record<string, { term: XtermTerminal; fit: FitAddon }>>({});
+  const unsubscribeRefs = useRef<Record<string, () => void>>({});
 
   useEffect(() => {
     // Destroy terminal instances that are no longer in tabs
     Object.keys(xtermInstances.current).forEach((tabId) => {
       if (!tabs.some((t) => t.id === tabId)) {
+        if (unsubscribeRefs.current[tabId]) {
+          unsubscribeRefs.current[tabId]();
+          delete unsubscribeRefs.current[tabId];
+        }
         xtermInstances.current[tabId].term.dispose();
         delete xtermInstances.current[tabId];
       }
     });
   }, [tabs]);
+
+  useEffect(() => {
+    return () => {
+      // Clean up all IPC subscriptions on unmount
+      Object.keys(unsubscribeRefs.current).forEach((tabId) => {
+        unsubscribeRefs.current[tabId]();
+      });
+      // Dispose all xterm instances on unmount
+      Object.keys(xtermInstances.current).forEach((tabId) => {
+        xtermInstances.current[tabId].term.dispose();
+      });
+    };
+  }, []);
 
   useEffect(() => {
     if (!activeTabId) return;
@@ -92,6 +112,10 @@ export const TerminalTabs: React.FC<TerminalTabsProps> = ({
       fit.fit();
       term.focus();
 
+      // Sync PTY dimensions to actual xterm size immediately — fires once per tab,
+      // not on the ResizeObserver path, so no debounce needed.
+      window.electron.ssh.resize(activeTab.connectionId, term.cols, term.rows);
+
       // Listen for data input from user
       term.onData((data) => {
         window.electron.ssh.write(activeTab.connectionId!, data);
@@ -101,6 +125,16 @@ export const TerminalTabs: React.FC<TerminalTabsProps> = ({
       const unsubscribeData = window.electron.ssh.onData(activeTab.connectionId, (incoming) => {
         term.write(incoming);
       });
+
+      // Surface SSH errors (unexpected disconnects, auth failures after connect) to parent
+      const unsubscribeError = window.electron.ssh.onError(activeTab.connectionId, (errMsg) => {
+        onConnectionError(activeTabId, errMsg);
+      });
+
+      unsubscribeRefs.current[activeTabId] = () => {
+        unsubscribeData();
+        unsubscribeError();
+      };
 
       xtermInstances.current[activeTabId] = { term, fit };
 
@@ -118,22 +152,27 @@ export const TerminalTabs: React.FC<TerminalTabsProps> = ({
     }
   }, [activeTabId, tabs]);
 
-  // Handle auto-fit on window resize
+  // Handle auto-fit on window resize — debounced to avoid flooding IPC during drag
   useEffect(() => {
+    let debounceTimer: ReturnType<typeof setTimeout> | null = null;
+
     const handleResize = () => {
-      if (!activeTabId) return;
-      const instance = xtermInstances.current[activeTabId];
-      if (instance) {
-        instance.fit.fit();
-        const activeTab = tabs.find((t) => t.id === activeTabId);
-        if (activeTab && activeTab.connectionId) {
-          window.electron.ssh.resize(
-            activeTab.connectionId,
-            instance.term.cols,
-            instance.term.rows
-          );
+      if (debounceTimer) clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(() => {
+        if (!activeTabId) return;
+        const instance = xtermInstances.current[activeTabId];
+        if (instance) {
+          instance.fit.fit();
+          const activeTab = tabs.find((t) => t.id === activeTabId);
+          if (activeTab && activeTab.connectionId) {
+            window.electron.ssh.resize(
+              activeTab.connectionId,
+              instance.term.cols,
+              instance.term.rows
+            );
+          }
         }
-      }
+      }, 100);
     };
 
     window.addEventListener('resize', handleResize);
@@ -143,6 +182,7 @@ export const TerminalTabs: React.FC<TerminalTabsProps> = ({
     }
 
     return () => {
+      if (debounceTimer) clearTimeout(debounceTimer);
       window.removeEventListener('resize', handleResize);
       observer.disconnect();
     };

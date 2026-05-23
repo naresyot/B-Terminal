@@ -1,7 +1,90 @@
 {
-  "last_updated": "2026-05-23T10:40:00+07:00",
-  "active_model": "Antigravity-2.0",
-  "current_sprint_goal": "Project Scaffolding and Version Control Initialization",
+  "last_updated": "2026-05-23T23:30:00+07:00",
+  "active_model": "Claude Sonnet 4.6",
+  "phase_roadmap": {
+    "Phase 0": { "name": "Scaffolding", "status": "complete" },
+    "Phase 1": { "name": "Live data flow", "status": "complete" },
+    "Phase 2": { "name": "Vault Unlock Modal", "status": "complete" },
+    "Phase 3": { "name": "Session CRUD — SessionFormModal", "status": "complete" },
+    "Phase 4": { "name": "Polish — terminal size, SFTP panel, context menu", "status": "complete" }
+  },
+  "current_phase": "All phases complete",
+  "current_sprint_goal": "All planned phases complete. Pending: file transfer ops, multi-window, theming.",
+  "completed_phases": {
+    "Phase 0": {
+      "status": "complete",
+      "summary": "All source files, Electron config, Vite, Tailwind, TypeScript scaffolded and pushed to GitHub."
+    },
+    "Phase 1": {
+      "status": "complete",
+      "summary": "Renderer and main process now share a single live data path. All mock data removed. ssh:write fire-and-forget, resize debounced, SSHConnectionPool double-disconnect fixed.",
+      "changes": [
+        "src/main/preload.ts — ssh.connect(sessionId: string) replaces raw config object",
+        "src/renderer/types.d.ts — SessionNode interface added globally; sessions IPC fully typed; ssh.write return type void",
+        "src/renderer/components/SessionTree.tsx — loads from sessions:getNodes IPC on mount; add/delete wired to IPC; two-click delete confirmation; loading/empty states; no window.prompt()",
+        "src/renderer/index.tsx — handleConnect passes session.id; hardcoded password_placeholder removed; handleConnectionError added",
+        "src/renderer/components/TerminalTabs.tsx — onConnectionError prop added; subscribes to ssh.onError alongside ssh.onData; both cleaned up together on tab close/unmount"
+      ]
+    },
+    "Phase 2": {
+      "status": "complete",
+      "summary": "VaultUnlockModal shown on startup. saltHex persisted in localStorage. Header badge is reactive (amber locked / emerald unlocked). Clicking locked badge re-opens modal.",
+      "changes": [
+        "src/renderer/components/VaultUnlockModal.tsx — NEW: master password input, calls vault:unlock, stores saltHex, inline error, Skip button",
+        "src/renderer/index.tsx — added vaultUnlocked + showVaultModal state; useEffect checks vault.isUnlocked() on mount; header badge reactive; modal rendered at root level"
+      ]
+    }
+  },
+  "bug_fixes_applied": {
+    "ssh_write_freeze": "Changed ssh:write from ipcRenderer.invoke to ipcRenderer.send (fire-and-forget). ipcMain.on replaces ipcMain.handle. Prevents Promise queue buildup on rapid keystrokes.",
+    "resize_no_debounce": "Added 100ms debounce to ResizeObserver + window.resize handler in TerminalTabs.tsx.",
+    "double_disconnect": "SSHConnectionPool.disconnect() deletes from Map before ending channel/client. channel.on('close') and client.on('close') are now re-entry-safe.",
+    "cpu_features_freeze": "stubs/cpu-features/ no-op stub added. package.json overrides cpu-features to file:./stubs/cpu-features. Prevents node-gyp C++ compilation on npm install."
+  },
+  "known_gaps_and_blockers": {
+    "vault_not_unlocked": "RESOLVED in Phase 2. VaultUnlockModal shown on startup, saltHex persisted in localStorage. SSH credential auth now functional.",
+    "session_crud_no_form": "SessionTree + button creates a placeholder session (name: 'New Session', host: 'hostname'). Full CRUD form is Phase 3.",
+    "sftp_uses_alert": "RESOLVED in Phase 4. SftpPanel.tsx renders a real overlay with directory listing and navigation.",
+    "terminal_hardcoded_80x24": "RESOLVED in Phase 4. TerminalTabs fires ssh.resize immediately after fit.fit() on first mount, syncing PTY to actual xterm cols/rows. Initial 80x24 is transient."
+  },
+  "architecture_invariants": [
+    "Renderer NEVER imports Node.js APIs. All system calls go through contextBridge in preload.ts.",
+    "ssh:write uses ipcRenderer.send (fire-and-forget) — never revert to invoke.",
+    "cpu-features override in package.json must not be removed — prevents node-gyp freeze on npm install.",
+    "stubs/cpu-features/ must not be deleted.",
+    "ResizeObserver/window.resize handlers must remain debounced (100ms).",
+    "SSHConnectionPool.disconnect() must delete from Map BEFORE calling channel/client end."
+  ],
+  "phase_2_plan": {
+    "goal": "Vault Unlock Modal — users can unlock SecureVault with master password so credentials are used at SSH connect time",
+    "files_to_create": [
+      "src/renderer/components/VaultUnlockModal.tsx — master password input, calls vault:unlock, shows error on wrong password"
+    ],
+    "files_to_modify": [
+      "src/renderer/index.tsx — show VaultUnlockModal on startup if vault locked; store saltHex in localStorage; update header vault badge reactively (locked/unlocked)"
+    ],
+    "ipc_already_ready": "vault:unlock, vault:lock, vault:isUnlocked are all registered in main.ts. SecureVault.ts is complete."
+  },
+  "phase_3_plan": {
+    "goal": "Session CRUD — users manage their own sessions with full form",
+    "files_to_create": [
+      "src/renderer/components/SessionFormModal.tsx — fields: name, host, port, username, auth method (password/publicKey), private key path, jump host selector, password/passphrase input"
+    ],
+    "files_to_modify": [
+      "src/renderer/components/SessionTree.tsx — open SessionFormModal from + button and from edit button on session rows"
+    ]
+  },
+  "handoff_documents": {
+    "full_briefing": ".ai/session-handoff.md",
+    "architecture_and_rules": ".ai/system-prompt.md",
+    "data_schemas": ".ai/knowledge-base.md"
+  },
+  "git_remote": "https://github.com/naresyot/B-Terminal.git",
+  "open_prs": [
+    { "number": 1, "title": "docs: add README", "branch": "docs/add-readme", "status": "open" }
+  ],
+  "node_version": "v26.0.0",
+  "dev_command": "npm run dev (concurrently: vite + tsc -w + electron)",
   "completed_files": [
     ".ai/system-prompt.md",
     ".ai/knowledge-base.md",
@@ -14,9 +97,13 @@
     "postcss.config.js",
     "vite.config.ts",
     ".gitignore",
+    "stubs/cpu-features/package.json",
+    "stubs/cpu-features/index.js",
     "src/main/main.ts",
     "src/main/preload.ts",
     "src/main/services/SSHConnectionPool.ts",
+    "src/main/services/SecureVault.ts",
+    "src/main/services/SessionManager.ts",
     "src/renderer/index.html",
     "src/renderer/index.css",
     "src/renderer/index.tsx",
@@ -24,16 +111,5 @@
     "src/renderer/components/SessionTree.tsx",
     "src/renderer/components/TerminalTabs.tsx",
     "src/renderer/components/ButtonBar.tsx"
-  ],
-  "active_working_files": [],
-  "architectural_decisions_made": [
-    "Selected Electron + TypeScript + React + Xterm.js for platform parity and hardware acceleration.",
-    "Proposed and approved encrypted JSON store utilizing native crypto instead of better-sqlite3 to avoid native binding compilation issues.",
-    "Initialized Git repository and successfully pushed to remote origin (https://github.com/naresyot/B-Terminal.git)."
-  ],
-  "breaking_changes_or_blockers": [],
-  "next_immediate_steps": [
-    "Install node packages via npm install.",
-    "Build the secure encrypted JSON key vault subsystem."
   ]
 }
