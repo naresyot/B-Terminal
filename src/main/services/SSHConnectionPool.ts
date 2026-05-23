@@ -35,6 +35,16 @@ export class SSHConnectionPool extends EventEmitter {
     try {
       const client = await this.connectNode(sessionConfig);
       
+      client.on('error', (clientErr) => {
+        onError(clientErr);
+        this.disconnect(connectionId);
+      });
+
+      // Safety net for unexpected server-side disconnects
+      client.on('close', () => {
+        this.connections.delete(connectionId);
+      });
+
       // Request an interactive pseudo-terminal (pty) shell channel
       client.shell({ term: 'xterm-256color', cols: 80, rows: 24 }, (err, channel) => {
         if (err) {
@@ -47,9 +57,12 @@ export class SSHConnectionPool extends EventEmitter {
           onData(data.toString('utf-8'));
         });
 
+        // Shell closed by remote side — tear down the whole client cleanly
         channel.on('close', () => {
-          this.connections.delete(connectionId);
-          client.end();
+          if (this.connections.has(connectionId)) {
+            this.connections.delete(connectionId);
+            client.end();
+          }
         });
 
         channel.on('error', (channelErr) => {
@@ -148,13 +161,11 @@ export class SSHConnectionPool extends EventEmitter {
    */
   public disconnect(connectionId: string): void {
     const session = this.connections.get(connectionId);
-    if (session) {
-      if (session.shellChannel) {
-        session.shellChannel.end();
-      }
-      session.client.end();
-      this.connections.delete(connectionId);
-    }
+    if (!session) return;
+    // Delete first so re-entrant close events (channel/client) are no-ops
+    this.connections.delete(connectionId);
+    session.shellChannel?.end();
+    session.client.end();
   }
 
   /**
