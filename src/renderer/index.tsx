@@ -1,8 +1,10 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { createRoot } from 'react-dom/client';
 import { SessionTree, SessionNode } from './components/SessionTree';
 import { TerminalTabs, TerminalTabItem } from './components/TerminalTabs';
 import { ButtonBar } from './components/ButtonBar';
+import { VaultUnlockModal } from './components/VaultUnlockModal';
+import { SftpPanel } from './components/SftpPanel';
 import { Terminal, Shield, Cpu, ChevronLeft, ChevronRight } from 'lucide-react';
 import './index.css';
 
@@ -10,63 +12,48 @@ const App: React.FC = () => {
   const [tabs, setTabs] = useState<TerminalTabItem[]>([]);
   const [activeTabId, setActiveTabId] = useState<string | null>(null);
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+  const [vaultUnlocked, setVaultUnlocked] = useState(false);
+  const [showVaultModal, setShowVaultModal] = useState(false);
+  const [sftpTab, setSftpTab] = useState<TerminalTabItem | null>(null);
 
-  // Spawns a new SSH connection tab
+  useEffect(() => {
+    window.electron.vault.isUnlocked().then((unlocked) => {
+      setVaultUnlocked(unlocked);
+      if (!unlocked) setShowVaultModal(true);
+    });
+  }, []);
+
+  // Spawns a new SSH connection tab — credentials resolved by SessionManager + SecureVault in main process
   const handleConnect = async (session: SessionNode) => {
     const tabId = Math.random().toString(36).substring(2, 11);
-    const newTab: TerminalTabItem = {
-      id: tabId,
-      name: session.name,
-      status: 'connecting',
-      sessionConfig: session,
-    };
-
-    setTabs((prev) => [...prev, newTab]);
+    setTabs((prev) => [...prev, { id: tabId, name: session.name, status: 'connecting', sessionConfig: session }]);
     setActiveTabId(tabId);
 
     try {
-      // Simulate/Trigger main-process secure SSH connection over IPC
-      const result = await window.electron.ssh.connect({
-        host: session.host,
-        port: session.port || 22,
-        username: session.username || 'root',
-        // In real setup, we decrypt keys/passwords securely. Here, mock connection config:
-        password: 'password_placeholder', 
-        privateKeyPath: session.privateKeyPath,
-        // Include nested Jump Host config if present
-        jumpHost: session.jumpHostId ? {
-          host: 'jump.staging.internal',
-          username: 'developer',
-          password: 'password_placeholder'
-        } : undefined
-      });
-
-      if (result.success && result.connectionId) {
-        setTabs((prev) =>
-          prev.map((t) =>
-            t.id === tabId
-              ? { ...t, status: 'connected', connectionId: result.connectionId }
-              : t
-          )
-        );
-      } else {
-        setTabs((prev) =>
-          prev.map((t) =>
-            t.id === tabId
-              ? { ...t, status: 'error', error: result.error || 'Unknown connection error' }
-              : t
-          )
-        );
-      }
-    } catch (err: any) {
+      const result = await window.electron.ssh.connect(session.id);
       setTabs((prev) =>
         prev.map((t) =>
           t.id === tabId
-            ? { ...t, status: 'error', error: err.message || 'System crash' }
+            ? result.success && result.connectionId
+              ? { ...t, status: 'connected', connectionId: result.connectionId }
+              : { ...t, status: 'error', error: result.error || 'Connection failed' }
             : t
         )
       );
+    } catch (err: any) {
+      setTabs((prev) =>
+        prev.map((t) =>
+          t.id === tabId ? { ...t, status: 'error', error: err.message || 'Unexpected error' } : t
+        )
+      );
     }
+  };
+
+  // Called by TerminalTabs when an active SSH connection emits an error after connect
+  const handleConnectionError = (tabId: string, error: string) => {
+    setTabs((prev) =>
+      prev.map((t) => (t.id === tabId ? { ...t, status: 'error', error } : t))
+    );
   };
 
   const handleSelectTab = (id: string) => {
@@ -97,21 +84,10 @@ const App: React.FC = () => {
     }
   };
 
-  // Dual-Engine Sync Demonstration
-  const handleCloneSFTP = async (tab: TerminalTabItem) => {
+  // Open the SFTP browser panel on the same SSH client (no extra auth)
+  const handleCloneSFTP = (tab: TerminalTabItem) => {
     if (!tab.connectionId) return;
-    alert(`Dual-Engine Sync Activated:\nInstantly cloning session "${tab.name}" into SFTP sub-channel without credential prompts.`);
-    try {
-      const response = await window.electron.sftp.list(tab.connectionId, '.');
-      if (response.success && response.list) {
-        console.log('SFTP Directory Sync listing:', response.list);
-        alert(`SFTP sync successful! Retrieved ${response.list.length} items from remote directory.`);
-      } else {
-        alert(`SFTP error: ${response.error}`);
-      }
-    } catch (e: any) {
-      alert(`SFTP sync command exception: ${e.message}`);
-    }
+    setSftpTab(tab);
   };
 
   const activeTab = tabs.find((t) => t.id === activeTabId);
@@ -128,10 +104,16 @@ const App: React.FC = () => {
           </span>
         </div>
         <div className="flex items-center gap-4 text-[10px] text-slate-500">
-          <div className="flex items-center gap-1">
-            <Shield size={12} className="text-emerald-500" />
-            <span>Vault Encrypted</span>
-          </div>
+          <button
+            onClick={() => !vaultUnlocked && setShowVaultModal(true)}
+            className={`flex items-center gap-1 transition-colors ${vaultUnlocked ? 'cursor-default' : 'hover:text-amber-300 cursor-pointer'}`}
+            title={vaultUnlocked ? 'Vault unlocked' : 'Click to unlock vault'}
+          >
+            <Shield size={12} className={vaultUnlocked ? 'text-emerald-500' : 'text-amber-500'} />
+            <span className={vaultUnlocked ? 'text-emerald-400' : 'text-amber-400'}>
+              {vaultUnlocked ? 'Vault Unlocked' : 'Vault Locked'}
+            </span>
+          </button>
           <div className="flex items-center gap-1">
             <Cpu size={12} className="text-blue-500" />
             <span>Hardware Accelerated (WebGL)</span>
@@ -169,12 +151,31 @@ const App: React.FC = () => {
             onSelectTab={handleSelectTab}
             onCloseTab={handleCloseTab}
             onCloneSFTP={handleCloneSFTP}
+            onConnectionError={handleConnectionError}
           />
         </div>
       </div>
 
       {/* Macro Command Button Bar */}
       <ButtonBar onRunMacro={handleRunMacro} activeTabConnected={activeTabConnected} />
+
+      {showVaultModal && (
+        <VaultUnlockModal
+          onUnlocked={() => {
+            setVaultUnlocked(true);
+            setShowVaultModal(false);
+          }}
+          onSkip={() => setShowVaultModal(false)}
+        />
+      )}
+
+      {sftpTab && sftpTab.connectionId && (
+        <SftpPanel
+          connectionId={sftpTab.connectionId}
+          connectionName={sftpTab.name}
+          onClose={() => setSftpTab(null)}
+        />
+      )}
     </div>
   );
 };

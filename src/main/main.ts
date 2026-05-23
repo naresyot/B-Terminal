@@ -1,6 +1,8 @@
 import { app, BrowserWindow, ipcMain } from 'electron';
 import * as path from 'path';
 import { SSHConnectionPool } from './services/SSHConnectionPool';
+import { SecureVault } from './services/SecureVault';
+import { SessionManager } from './services/SessionManager';
 
 let mainWindow: BrowserWindow | null = null;
 const isDev = !app.isPackaged;
@@ -54,8 +56,9 @@ app.on('window-all-closed', () => {
 // --- Secure IPC Channels Registration ---
 
 // SSH Connections
-ipcMain.handle('ssh:connect', async (event, sessionConfig) => {
+ipcMain.handle('ssh:connect', async (event, sessionId) => {
   try {
+    const sessionConfig = SessionManager.getInstance().resolveConnectionConfig(sessionId);
     const connectionId = await SSHConnectionPool.getInstance().createConnection(
       sessionConfig,
       (data) => {
@@ -77,12 +80,12 @@ ipcMain.handle('ssh:connect', async (event, sessionConfig) => {
   }
 });
 
-ipcMain.handle('ssh:write', async (event, { connectionId, data }) => {
+// Fire-and-forget — no round-trip needed for keystroke data
+ipcMain.on('ssh:write', (_event, { connectionId, data }) => {
   try {
     SSHConnectionPool.getInstance().write(connectionId, data);
-    return { success: true };
-  } catch (error: any) {
-    return { success: false, error: error.message };
+  } catch {
+    // Connection may have closed between keypress and delivery; safe to ignore
   }
 });
 
@@ -111,5 +114,51 @@ ipcMain.handle('sftp:list', async (event, { connectionId, remotePath }) => {
     return { success: true, list };
   } catch (error: any) {
     return { success: false, error: error.message };
+  }
+});
+
+// Vault IPC Handlers
+ipcMain.handle('vault:unlock', async (event, { password, saltHex }) => {
+  try {
+    const salt = SecureVault.getInstance().unlock(password, saltHex);
+    return { success: true, saltHex: salt };
+  } catch (error: any) {
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('vault:lock', () => {
+  SecureVault.getInstance().lock();
+});
+
+ipcMain.handle('vault:isUnlocked', () => {
+  return SecureVault.getInstance().isUnlocked();
+});
+
+ipcMain.handle('vault:setCredential', (event, { id, secret }) => {
+  SecureVault.getInstance().setCredential(id, secret);
+});
+
+ipcMain.handle('vault:deleteCredential', (event, id) => {
+  SecureVault.getInstance().deleteCredential(id);
+});
+
+// Sessions IPC Handlers
+ipcMain.handle('sessions:getNodes', () => {
+  return SessionManager.getInstance().getNodes();
+});
+
+ipcMain.handle('sessions:addNode', (event, node) => {
+  SessionManager.getInstance().addNode(node);
+});
+
+ipcMain.handle('sessions:updateNode', (event, { id, fields }) => {
+  SessionManager.getInstance().updateNode(id, fields);
+});
+
+ipcMain.handle('sessions:deleteNode', (event, id) => {
+  SessionManager.getInstance().deleteNode(id);
+  if (SecureVault.getInstance().isUnlocked()) {
+    SecureVault.getInstance().deleteCredential(id);
   }
 });
