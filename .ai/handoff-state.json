@@ -1,0 +1,20 @@
+{
+  "last_updated": "2026-05-23T10:33:45+07:00",
+  "active_model": "Antigravity-2.0",
+  "current_sprint_goal": "Project Initialization, Workspace Scaffolding, and Git Repository Alignment",
+  "completed_files": [
+    ".ai/system-prompt.md",
+    ".ai/knowledge-base.md",
+    ".ai/handoff-state.json"
+  ],
+  "active_working_files": [],
+  "architectural_decisions_made": [
+    "Selected Electron + TypeScript + React + Xterm.js for platform parity and hardware acceleration.",
+    "Proposed and approved encrypted JSON store utilizing native crypto instead of better-sqlite3 to avoid native binding compilation issues."
+  ],
+  "breaking_changes_or_blockers": [],
+  "next_immediate_steps": [
+    "Create core configuration files (package.json, tsconfig.json, tailwind.config.js, postcss.config.js, .gitignore)",
+    "Write source tree skeleton under src/"
+  ]
+}
