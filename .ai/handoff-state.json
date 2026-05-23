@@ -1,20 +1,39 @@
 {
-  "last_updated": "2026-05-23T10:33:45+07:00",
+  "last_updated": "2026-05-23T10:40:00+07:00",
   "active_model": "Antigravity-2.0",
-  "current_sprint_goal": "Project Initialization, Workspace Scaffolding, and Git Repository Alignment",
+  "current_sprint_goal": "Project Scaffolding and Version Control Initialization",
   "completed_files": [
     ".ai/system-prompt.md",
     ".ai/knowledge-base.md",
-    ".ai/handoff-state.json"
+    ".ai/handoff-state.json",
+    "package.json",
+    "tsconfig.json",
+    "tsconfig.main.json",
+    "tsconfig.renderer.json",
+    "tailwind.config.js",
+    "postcss.config.js",
+    "vite.config.ts",
+    ".gitignore",
+    "src/main/main.ts",
+    "src/main/preload.ts",
+    "src/main/services/SSHConnectionPool.ts",
+    "src/renderer/index.html",
+    "src/renderer/index.css",
+    "src/renderer/index.tsx",
+    "src/renderer/types.d.ts",
+    "src/renderer/components/SessionTree.tsx",
+    "src/renderer/components/TerminalTabs.tsx",
+    "src/renderer/components/ButtonBar.tsx"
   ],
   "active_working_files": [],
   "architectural_decisions_made": [
     "Selected Electron + TypeScript + React + Xterm.js for platform parity and hardware acceleration.",
-    "Proposed and approved encrypted JSON store utilizing native crypto instead of better-sqlite3 to avoid native binding compilation issues."
+    "Proposed and approved encrypted JSON store utilizing native crypto instead of better-sqlite3 to avoid native binding compilation issues.",
+    "Initialized Git repository and successfully pushed to remote origin (https://github.com/naresyot/B-Terminal.git)."
   ],
   "breaking_changes_or_blockers": [],
   "next_immediate_steps": [
-    "Create core configuration files (package.json, tsconfig.json, tailwind.config.js, postcss.config.js, .gitignore)",
-    "Write source tree skeleton under src/"
+    "Install node packages via npm install.",
+    "Build the secure encrypted JSON key vault subsystem."
   ]
 }
