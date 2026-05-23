@@ -130,3 +130,36 @@ Any AI agent should be able to walk into this repo cold and resume work. That on
 **Memory vs. handoff files:**
 - Handoff files (`.ai/*`) are the *project's* knowledge — shared across agents (Claude, Gemini, future tools). Commit them.
 - Per-agent memory (e.g. Claude's `~/.claude/.../memory/`) is private to that agent. Use it for cross-project user preferences, not for project-specific facts that the next agent needs to know.
+
+---
+
+## 10. Multi-agent compatibility — Claude, Gemini, Codex (and future)
+
+OmniTerm is built collaboratively by multiple AI coding agents. The user may invoke **Claude Code**, **Gemini (Antigravity)**, **Codex**, or future tools at any time on the same repo. Every change you ship must remain legible and actionable to all of them.
+
+**Concrete rules:**
+
+- **`.ai/*` files are the single source of truth.** They must contain *all* context needed to resume work — no agent-specific shortcuts, no "ask Claude what we decided last time," no implicit references to one tool's memory. If a fact matters, write it down in a committed file.
+
+- **Tool-agnostic language in handoff docs.** Do not reference any one agent's tools by name inside `.ai/*` instructions:
+  - ❌ "Use the `TaskCreate` tool to track this" (Claude-specific)
+  - ❌ "Save to memory" without saying *which* file
+  - ✅ "Track this in your todo system" / "Persist this in `.ai/handoff-state.json`"
+
+- **Kickoff prompts must mirror.** When you add a kickoff prompt for one agent (e.g. `.ai/gemini-kickoff-prompt.md`), maintain equivalents for the others if they don't exist yet, or generalize into a single `.ai/agent-kickoff.md`. No agent should be starved of onboarding.
+
+- **No agent-specific code generation patterns in product code.** Stick to standard TypeScript / React idioms documented in the repo. Don't introduce style choices that depend on one agent's bias (e.g. agent-specific JSDoc conventions, framework wrappers tied to one tool's output style). The compiler and the lint config are the arbiter, not the agent.
+
+- **No vendor SDKs unless the product genuinely needs them.** Do not add `@anthropic-ai/*`, `@google/*`, `@openai/*`, or similar to `package.json` unless OmniTerm itself calls that API. AI assistance happens *outside* the running app.
+
+- **Plain GitHub-flavored Markdown.** No agent-specific extensions (Claude artifacts syntax, Gemini-specific embeds, OpenAI canvases). Files must render correctly on GitHub and in any text editor.
+
+- **Commit attribution reflects the actual author.** Sign commits with the agent that did the work (`Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>`, `Co-Authored-By: Gemini …`, etc.). Don't hardcode one agent's signature in templates. The user is the human author on every commit.
+
+- **Cross-agent verification.** For major architectural changes, the user may run the same prompt through a different agent to verify the result. Don't write code or docs that only one agent's parser can read — keep things conventional.
+
+- **When in doubt, write for the lowest common denominator.** If an instruction or code pattern would confuse any one of {Claude, Gemini, Codex}, simplify it. The bar is "any competent agent could pick this up cold and continue."
+
+- **Update this rule when a new agent joins.** If the user adopts a new AI tool, add it to the explicit list above (don't leave it to inference). Conversely, dropping a tool means cleaning up its kickoff files.
+
+**Why this matters:** OmniTerm's value is in continuity. The architecture rules (§ 1-5), the bug fixes, the phase roadmap — all of it has to survive the handoff between sessions *and* between agents. A rule that only Claude understands is a rule that gets reverted the next time Gemini touches the file.
